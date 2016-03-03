@@ -19,20 +19,62 @@ class Twig extends Extractor implements ExtractorInterface
     protected static $twig;
 
     /**
+     * Kernel
+     *
+     * @var \AppKernel
+     */
+    protected static $kernel;
+
+    /**
      * {@inheritdoc}
      */
     public static function fromString($string, Translations $translations = null, $file = '')
     {
-        self::addExtension('Twig_Extensions_Extension_I18n');
+        self::createKernel();
+        self::createTwig();
 
-        $string = self::$twig->compileSource($string);
+        $string = self::$twig->getLoader()->getSource($file);
+        $string = self::$twig->compileSource($string, $file);
 
-        // add default global php gettext functions
-        PhpCode::$functions['gettext'] = '__';
-        PhpCode::$functions['ngettext'] = '__';
-        PhpCode::$functions['_'] = '__';
+        // find all linefeeds in buffer
+        $reg = preg_match_all('/ call_user_func_array\(\$this->env->getFunction\(\'__\'\)->getCallable\(\), array\("(.*?)"\)\)/s', $string, $sourceStrings, PREG_OFFSET_CAPTURE );
+        foreach ($sourceStrings[1] as $key => $sourceString) {
 
-        return PhpCode::fromString($string, $translations, $file);
+            $line = self::getLine($string, $sourceStrings[0][$key][1]);
+            $fileReference = str_replace(realpath(self::$kernel->getContainer()->getParameter('kernel.root_dir') . '/../'). '/', "", $file);
+            $translations->insert('', $sourceString[0])->addReference($fileReference, $line);
+
+        }
+
+        return $translations;
+    }
+
+
+    public static function getLine($string, $offset) {
+
+        $subString = substr($string, 0, $offset);
+        $line = substr_count( $subString, "\n" ) +1;
+
+        return $line;
+
+    }
+
+    public static function  createKernel() {
+
+        if (!isset(self::$kernel)) {
+            self::$kernel = new \AppKernel('prod', false);
+            self::$kernel->boot();
+
+        }
+
+    }
+
+    public static function  createTwig() {
+
+        if (!isset(self::$twig)) {
+            self::$twig = self::$kernel->getContainer()->get('twig');
+        }
+
     }
 
     /**
